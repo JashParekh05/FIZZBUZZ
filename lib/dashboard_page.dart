@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
+import 'package:fl_chart/fl_chart.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -66,6 +67,18 @@ class _DashboardPageState extends State<DashboardPage> {
     if (temp > 28) return 'High Temperature';
     if (temp < 10) return 'Low Temperature';
     return 'Optimal';
+  }
+
+  List<FlSpot> getChartData(String key) {
+    final dataToShow = readings.length > 20 ? readings.sublist(0, 20) : readings;
+    final spots = <FlSpot>[];
+    
+    for (int i = 0; i < dataToShow.length; i++) {
+      final value = (dataToShow[i][key] ?? 0).toDouble();
+      spots.add(FlSpot(i.toDouble(), value));
+    }
+    
+    return spots.reversed.toList();
   }
 
   @override
@@ -217,7 +230,7 @@ class _DashboardPageState extends State<DashboardPage> {
                             ),
                             const SizedBox(height: 24),
                             
-                            // Metrics Grid
+                            // Metrics Grid with Charts
                             const Text(
                               'Current Readings',
                               style: TextStyle(
@@ -233,28 +246,31 @@ class _DashboardPageState extends State<DashboardPage> {
                               crossAxisCount: 2,
                               mainAxisSpacing: 16,
                               crossAxisSpacing: 16,
-                              childAspectRatio: 1.3,
+                              childAspectRatio: 0.85,
                               children: [
-                                _buildMetricCard(
+                                _buildMetricCardWithChart(
                                   icon: Icons.thermostat,
                                   label: 'Temperature',
                                   value: '${temp.toStringAsFixed(1)}°C',
                                   color: Colors.orange,
                                   optimal: '18-22°C',
+                                  chartData: getChartData('temperature'),
                                 ),
-                                _buildMetricCard(
+                                _buildMetricCardWithChart(
                                   icon: Icons.water_drop,
                                   label: 'Humidity',
                                   value: '${humidity.toStringAsFixed(1)}%',
                                   color: Colors.blue,
                                   optimal: '60-70%',
+                                  chartData: getChartData('humidity'),
                                 ),
-                                _buildMetricCard(
+                                _buildMetricCardWithChart(
                                   icon: Icons.air,
                                   label: 'CO₂ Level',
                                   value: '$co2 ppm',
                                   color: Colors.green,
                                   optimal: '<2000 ppm',
+                                  chartData: getChartData('co2'),
                                 ),
                                 _buildMetricCard(
                                   icon: Icons.access_time,
@@ -286,6 +302,188 @@ class _DashboardPageState extends State<DashboardPage> {
         onPressed: fetchData,
         backgroundColor: Colors.deepPurple,
         child: const Icon(Icons.refresh),
+      ),
+    );
+  }
+
+  Widget _buildMetricCardWithChart({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+    required String optimal,
+    required List<FlSpot> chartData,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              Text(
+                optimal,
+                style: TextStyle(
+                  fontSize: 9,
+                  color: Colors.grey[500],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: chartData.length > 1
+                ? LineChart(
+                    LineChartData(
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        horizontalInterval: 1,
+                        getDrawingHorizontalLine: (value) {
+                          return FlLine(
+                            color: Colors.grey[200]!,
+                            strokeWidth: 1,
+                          );
+                        },
+                      ),
+                      titlesData: FlTitlesData(
+                        show: true,
+                        rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 22,
+                            interval: 5,
+                            getTitlesWidget: (value, meta) {
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  '${value.toInt()}',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 32,
+                            interval: _getInterval(chartData),
+                            getTitlesWidget: (value, meta) {
+                              return Text(
+                                value.toStringAsFixed(0),
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 10,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      borderData: FlBorderData(
+                        show: true,
+                        border: Border(
+                          bottom: BorderSide(color: Colors.grey[300]!, width: 1),
+                          left: BorderSide(color: Colors.grey[300]!, width: 1),
+                        ),
+                      ),
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: chartData,
+                          isCurved: true,
+                          color: color,
+                          barWidth: 2.5,
+                          dotData: FlDotData(
+                            show: true,
+                            getDotPainter: (spot, percent, barData, index) {
+                              return FlDotCirclePainter(
+                                radius: 2,
+                                color: color,
+                                strokeWidth: 0,
+                              );
+                            },
+                          ),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            color: color.withOpacity(0.15),
+                          ),
+                        ),
+                      ],
+                      lineTouchData: LineTouchData(
+                        enabled: true,
+                        touchTooltipData: LineTouchTooltipData(
+                          getTooltipItems: (touchedSpots) {
+                            return touchedSpots.map((spot) {
+                              return LineTooltipItem(
+                                spot.y.toStringAsFixed(1),
+                                TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 10,
+                                ),
+                              );
+                            }).toList();
+                          },
+                        ),
+                      ),
+                    ),
+                  )
+                : Center(
+                    child: Text(
+                      'Collecting data...',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -380,10 +578,10 @@ class _DashboardPageState extends State<DashboardPage> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.deepPurple.withOpacity(0.1),
+              color: Colors.red.withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.sensors, color: Colors.deepPurple, size: 20),
+            child: const Icon(Icons.sensors, color: Colors.red, size: 20),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -435,5 +633,21 @@ class _DashboardPageState extends State<DashboardPage> {
     } catch (e) {
       return 'Just now';
     }
+  }
+
+  // Helper method to calculate appropriate Y-axis interval
+  double _getInterval(List<FlSpot> data) {
+    if (data.isEmpty) return 1;
+    
+    final values = data.map((spot) => spot.y).toList();
+    final min = values.reduce((a, b) => a < b ? a : b);
+    final max = values.reduce((a, b) => a > b ? a : b);
+    final range = max - min;
+    
+    if (range < 5) return 1;
+    if (range < 10) return 2;
+    if (range < 50) return 10;
+    if (range < 100) return 20;
+    return 50;
   }
 }
