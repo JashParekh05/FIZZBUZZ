@@ -56,16 +56,6 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  String formatTimestamp(String? timestamp) {
-    if (timestamp == null) return '';
-    try {
-      final dt = DateTime.parse(timestamp);
-      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
-    } catch (e) {
-      return timestamp.split('T')[1].split('.')[0];
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -87,14 +77,11 @@ class _DashboardPageState extends State<DashboardPage> {
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
                           child: ListTile(
-                            title: Text('${reading['sensor_id'] ?? 'Sensor'} - ${reading['temperature']?.toStringAsFixed(1) ?? 'N/A'}°C'),
+                            title: Text('Temperature: ${reading['temperature']}°C'),
                             subtitle: Text(
-                              'Humidity: ${reading['humidity']?.toStringAsFixed(1) ?? 'N/A'}% | CO₂: ${reading['co2']?.toStringAsFixed(0) ?? 'N/A'} ppm',
+                              'Humidity: ${reading['humidity']}% | CO₂: ${reading['co2']} ppm',
                             ),
-                            trailing: Text(
-                              formatTimestamp(reading['timestamp']),
-                              style: const TextStyle(fontSize: 12),
-                            ),
+                            trailing: Text(reading['timestamp'] ?? ''),
                           ),
                         );
                       },
