@@ -1,241 +1,450 @@
 import 'dart:math';
 
+// Predictive Analytics using Linear Regression
 class FermentationPredictor {
-  /// Predicts fermentation completion based on CO₂ trends
   static Map<String, dynamic> predictCompletion(List<Map<String, dynamic>> readings) {
     if (readings.length < 10) {
       return {
-        'daysRemaining': null,
-        'confidence': 'low',
         'message': 'Collecting data for prediction...',
-        'status': 'initializing',
-      };
-    }
-
-    // Extract CO₂ values (reverse order - oldest to newest for trend analysis)
-    List<double> co2Values = [];
-    List<double> timeIndices = [];
-    
-    final dataPoints = min(readings.length, 50);
-    for (int i = dataPoints - 1; i >= 0; i--) {
-      final reading = readings[i];
-      co2Values.add((reading['co2'] ?? 0).toDouble());
-      timeIndices.add((dataPoints - 1 - i).toDouble());
-    }
-
-    // Linear regression
-    final regression = _linearRegression(timeIndices, co2Values);
-    final slope = regression['slope'] ?? 0.0;
-    final currentCO2 = readings.first['co2']?.toDouble() ?? 0;
-    
-    // Target CO₂ for completion (wine: ~500 ppm, beer: ~800 ppm)
-    const targetCO2 = 600.0;
-    
-    if (slope >= 0) {
-      return {
-        'daysRemaining': null,
         'confidence': 'low',
-        'message': 'Fermentation not progressing',
-        'status': 'stalled',
-        'trend': 'stable',
+        'daysRemaining': null,
       };
     }
 
-    // Estimate completion (assuming 10-second intervals between readings)
-    final readingsToTarget = (currentCO2 - targetCO2) / slope.abs();
-    final hoursRemaining = (readingsToTarget * 10 / 3600); // 10 sec per reading
-    final daysRemaining = max(1, (hoursRemaining / 24).round());
-    final rSquared = regression['rSquared'] ?? 0.0;
-    String confidence = rSquared > 0.8 ? 'high' : rSquared > 0.5 ? 'medium' : 'low';
-
+    // Use last 20 readings for trend analysis
+    final recentReadings = readings.length > 20 ? readings.sublist(0, 20) : readings;
+    
+    // Calculate average rate of change for dissolved oxygen (key fermentation indicator)
+    final doValues = recentReadings.map((r) => (r['dissolved_oxygen'] ?? 0).toDouble()).toList().cast<double>();
+    final avgDO = doValues.reduce((a, b) => a + b) / doValues.length;
+    
+    // Linear regression to predict when DO will reach ideal level (< 2.0 mg/L for completion)
+    double slope = _calculateSlope(doValues);
+    
+    // Predict days remaining
+    int? daysRemaining;
+    String confidence = 'low';
+    
+    if (slope.abs() > 0.1) {
+      // Active fermentation
+      double daysToCompletion = (avgDO - 2.0) / slope.abs();
+      daysRemaining = daysToCompletion.clamp(1, 30).round();
+      
+      if (slope.abs() > 0.3) {
+        confidence = 'high';
+      } else if (slope.abs() > 0.15) {
+        confidence = 'medium';
+      }
+    } else {
+      // Slow fermentation
+      daysRemaining = 7;
+      confidence = 'low';
+    }
+    
     return {
-      'daysRemaining': min(daysRemaining, 30),
+      'daysRemaining': daysRemaining,
       'confidence': confidence,
-      'message': 'Predicted completion in $daysRemaining ${daysRemaining == 1 ? "day" : "days"}',
-      'status': 'active',
-      'trend': 'declining',
-      'rSquared': rSquared,
+      'message': slope.abs() < 0.05 ? 'Fermentation appears stalled' : null,
+      'accuracy': _calculateR2(doValues),
     };
   }
-
-  static Map<String, double> _linearRegression(List<double> x, List<double> y) {
-    if (x.isEmpty || y.isEmpty) {
-      return {'slope': 0.0, 'intercept': 0.0, 'rSquared': 0.0};
+  
+  // Predict potential issues using linear regression
+  static Map<String, dynamic> predictIssues(List<Map<String, dynamic>> readings) {
+    if (readings.length < 15) {
+      return {
+        'hasIssues': false,
+        'predictions': [],
+      };
     }
-
-    final n = x.length;
-    final sumX = x.reduce((a, b) => a + b);
-    final sumY = y.reduce((a, b) => a + b);
-    final sumXY = List.generate(n, (i) => x[i] * y[i]).reduce((a, b) => a + b);
-    final sumX2 = x.map((xi) => xi * xi).reduce((a, b) => a + b);
-
-    final slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    final intercept = (sumY - slope * sumX) / n;
-
-    // Calculate R²
-    final yMean = sumY / n;
-    final ssTotal = y.map((yi) => (yi - yMean) * (yi - yMean)).reduce((a, b) => a + b);
-    final ssResidual = List.generate(n, (i) => y[i] - (slope * x[i] + intercept))
-        .map((residual) => residual * residual)
-        .reduce((a, b) => a + b);
     
-    final rSquared = ssTotal > 0 ? max(0.0, 1 - (ssResidual / ssTotal)) : 0.0;
-
+    final recentReadings = readings.length > 20 ? readings.sublist(0, 20) : readings;
+    List<Map<String, dynamic>> predictions = [];
+    
+    // Temperature trend analysis
+    final tempValues = recentReadings.map((r) => (r['temperature'] ?? 0).toDouble()).toList().cast<double>();
+    double tempSlope = _calculateSlope(tempValues);
+    final avgTemp = tempValues.reduce((a, b) => a + b) / tempValues.length;
+    
+    if (tempSlope > 0.5) {
+      predictions.add({
+        'type': 'warning',
+        'metric': 'Temperature',
+        'message': 'Temperature rising rapidly. May exceed safe limits in ${(28 - avgTemp) ~/ tempSlope} readings',
+        'severity': 'high',
+        'recommendation': 'Cool fermentation vessel immediately',
+      });
+    }
+    
+    // pH trend analysis
+    final phValues = recentReadings.map((r) => (r['ph'] ?? 0).toDouble()).toList().cast<double>();
+    double phSlope = _calculateSlope(phValues);
+    final avgPH = phValues.reduce((a, b) => a + b) / phValues.length;
+    
+    if (phSlope > 0.05) {
+      predictions.add({
+        'type': 'warning',
+        'metric': 'pH',
+        'message': 'pH increasing. Risk of bacterial contamination in ${((4.5 - avgPH) / phSlope).round()} readings',
+        'severity': 'medium',
+        'recommendation': 'Monitor for off-flavors and consider sulfite addition',
+      });
+    } else if (phSlope < -0.05) {
+      predictions.add({
+        'type': 'info',
+        'metric': 'pH',
+        'message': 'pH decreasing normally. Fermentation progressing well',
+        'severity': 'low',
+        'recommendation': 'Continue current process',
+      });
+    }
+    
+    // Dissolved Oxygen trend analysis
+    final doValues = recentReadings.map((r) => (r['dissolved_oxygen'] ?? 0).toDouble()).toList().cast<double>();
+    double doSlope = _calculateSlope(doValues);
+    final avgDO = doValues.reduce((a, b) => a + b) / doValues.length;
+    
+    if (doSlope > 0.2) {
+      predictions.add({
+        'type': 'warning',
+        'metric': 'Dissolved Oxygen',
+        'message': 'Oxygen levels rising. Risk of oxidation',
+        'severity': 'high',
+        'recommendation': 'Check for leaks in fermentation vessel',
+      });
+    } else if (avgDO < 2.0 && doSlope.abs() < 0.05) {
+      predictions.add({
+        'type': 'success',
+        'metric': 'Dissolved Oxygen',
+        'message': 'Fermentation nearing completion',
+        'severity': 'low',
+        'recommendation': 'Prepare for racking',
+      });
+    }
+    
     return {
-      'slope': slope,
-      'intercept': intercept,
-      'rSquared': rSquared,
+      'hasIssues': predictions.isNotEmpty,
+      'predictions': predictions,
+      'confidence': predictions.length > 2 ? 'high' : 'medium',
     };
+  }
+  
+  static double _calculateSlope(List<double> values) {
+    if (values.length < 2) return 0.0;
+    
+    int n = values.length;
+    List<double> x = List.generate(n, (i) => i.toDouble());
+    
+    double sumX = x.reduce((a, b) => a + b);
+    double sumY = values.reduce((a, b) => a + b);
+    double sumXY = 0.0;
+    double sumX2 = 0.0;
+    
+    for (int i = 0; i < n; i++) {
+      sumXY += x[i] * values[i];
+      sumX2 += x[i] * x[i];
+    }
+    
+    double slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    return slope;
+  }
+  
+  static double _calculateR2(List<double> values) {
+    if (values.length < 2) return 0.0;
+    
+    double mean = values.reduce((a, b) => a + b) / values.length;
+    double totalSS = 0.0;
+    double residualSS = 0.0;
+    
+    List<double> predicted = [];
+    double slope = _calculateSlope(values);
+    double intercept = mean - slope * (values.length - 1) / 2;
+    
+    for (int i = 0; i < values.length; i++) {
+      predicted.add(slope * i + intercept);
+      totalSS += pow(values[i] - mean, 2);
+      residualSS += pow(values[i] - predicted[i], 2);
+    }
+    
+    if (totalSS == 0) return 0.0;
+    return (1 - (residualSS / totalSS)).clamp(0.0, 1.0);
   }
 }
 
+// Anomaly Detection
 class AnomalyDetector {
-  /// Detects anomalies using statistical analysis
-  static List<Map<String, String>> detectAnomalies(List<Map<String, dynamic>> readings) {
-    if (readings.length < 20) return [];
-
-    List<Map<String, String>> anomalies = [];
-
-    // Temperature analysis
-    final temps = readings.take(50).map((r) => (r['temperature'] ?? 0).toDouble()).toList().cast<double>();
-    final tempAnomaly = _detectOutliers(temps, 'Temperature', '°C');
-    if (tempAnomaly != null) anomalies.add(tempAnomaly);
-
-    // CO₂ analysis
-    final co2s = readings.take(50).map((r) => (r['co2'] ?? 0).toDouble()).toList().cast<double>();
-    final co2Anomaly = _detectOutliers(co2s, 'CO₂', 'ppm');
-    if (co2Anomaly != null) anomalies.add(co2Anomaly);
-
-    // Humidity analysis
-    final humidities = readings.take(50).map((r) => (r['humidity'] ?? 0).toDouble()).toList().cast<double>();
-    final humidityAnomaly = _detectOutliers(humidities, 'Humidity', '%');
-    if (humidityAnomaly != null) anomalies.add(humidityAnomaly);
-
+  static List<Map<String, dynamic>> detectAnomalies(List<Map<String, dynamic>> readings) {
+    if (readings.length < 10) return [];
+    
+    List<Map<String, dynamic>> anomalies = [];
+    
+    // Calculate statistics for each metric
+    final tempStats = _calculateStats(readings, 'temperature');
+    final doStats = _calculateStats(readings, 'dissolved_oxygen');
+    final phStats = _calculateStats(readings, 'ph');
+    
+    // Check recent readings for anomalies (Z-score > 2)
+    for (int i = 0; i < min(5, readings.length); i++) {
+      final reading = readings[i];
+      
+      if (tempStats['stdDev']! > 0) {
+        double tempZ = ((reading['temperature'] ?? 0) - tempStats['mean']!) / tempStats['stdDev']!;
+        
+        if (tempZ.abs() > 2) {
+          anomalies.add({
+            'metric': 'Temperature',
+            'value': reading['temperature'],
+            'zscore': tempZ.toStringAsFixed(2),
+            'timestamp': reading['timestamp'],
+            'severity': tempZ.abs() > 3 ? 'critical' : 'warning',
+          });
+        }
+      }
+      
+      if (doStats['stdDev']! > 0) {
+        double doZ = ((reading['dissolved_oxygen'] ?? 0) - doStats['mean']!) / doStats['stdDev']!;
+        
+        if (doZ.abs() > 2) {
+          anomalies.add({
+            'metric': 'Dissolved Oxygen',
+            'value': reading['dissolved_oxygen'],
+            'zscore': doZ.toStringAsFixed(2),
+            'timestamp': reading['timestamp'],
+            'severity': doZ.abs() > 3 ? 'critical' : 'warning',
+          });
+        }
+      }
+      
+      if (phStats['stdDev']! > 0) {
+        double phZ = ((reading['ph'] ?? 0) - phStats['mean']!) / phStats['stdDev']!;
+        
+        if (phZ.abs() > 2) {
+          anomalies.add({
+            'metric': 'pH',
+            'value': reading['ph'],
+            'zscore': phZ.toStringAsFixed(2),
+            'timestamp': reading['timestamp'],
+            'severity': phZ.abs() > 3 ? 'critical' : 'warning',
+          });
+        }
+      }
+    }
+    
     return anomalies;
   }
-
-  static Map<String, String>? _detectOutliers(List<double> values, String metric, String unit) {
-    if (values.isEmpty) return null;
-
+  
+  static Map<String, double> _calculateStats(List<Map<String, dynamic>> readings, String key) {
+    final values = readings.map((r) => (r[key] ?? 0).toDouble()).toList();
     final mean = values.reduce((a, b) => a + b) / values.length;
-    final variance = values.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) / values.length;
-    final stdDev = sqrt(variance);
-    final latest = values.first;
-    final zScore = stdDev > 0 ? (latest - mean).abs() / stdDev : 0;
-
-    // Z-score > 2 means outside 95% confidence interval
-    if (zScore > 2.0) {
-      return {
-        'metric': metric,
-        'message': '$metric showing unusual pattern (${zScore.toStringAsFixed(1)}σ from mean)',
-        'severity': zScore > 3 ? 'critical' : 'warning',
-      };
+    
+    double variance = 0;
+    for (var value in values) {
+      variance += pow(value - mean, 2);
     }
-
-    return null;
+    variance /= values.length;
+    
+    return {
+      'mean': mean,
+      'stdDev': sqrt(variance),
+    };
   }
 }
 
+// Wine-Specific Recommendations
 class SmartRecommendations {
-  /// Generates AI-powered recommendations
   static List<Map<String, dynamic>> getRecommendations(
     Map<String, dynamic>? latest,
     List<Map<String, dynamic>> readings,
     Map<String, dynamic> prediction,
   ) {
-    if (latest == null) return [];
-
+    if (latest == null || readings.isEmpty) return [];
+    
     List<Map<String, dynamic>> recommendations = [];
-
     final temp = (latest['temperature'] ?? 0).toDouble();
-    final dissolvedOxygen = (latest['dissolved_oxygen'] ?? 0).toDouble();
     final ph = (latest['ph'] ?? 0).toDouble();
-
+    final dissolvedOxygen = (latest['dissolved_oxygen'] ?? 0).toDouble();
+    
+    // Determine fermentation type based on data patterns
+    String fermentationType = _detectFermentationType(readings);
+    
+    // Get wine-specific specs
+    Map<String, dynamic> specs = _getWineSpecs(fermentationType);
+    
     // Temperature recommendations
-    if (temp > 25) {
+    if (temp < specs['temp_min']) {
       recommendations.add({
+        'title': 'Temperature Too Low',
+        'message': 'Current: ${temp.toStringAsFixed(1)}°C. ${specs['name']} requires ${specs['temp_min']}-${specs['temp_max']}°C',
         'type': 'warning',
         'icon': 'thermostat',
-        'title': 'Temperature Alert',
-        'message': 'Temperature elevated at ${temp.toStringAsFixed(1)}°C. Optimal fermentation range is 18-22°C.',
-        'priority': 'high',
-        'action': 'Activate cooling system or move to cooler location',
+        'action': 'Increase ambient temperature or use heating wrap',
+        'priority': 2,
       });
-    } else if (temp < 18) {
+    } else if (temp > specs['temp_max']) {
       recommendations.add({
-        'type': 'info',
+        'title': 'Temperature Too High',
+        'message': 'Current: ${temp.toStringAsFixed(1)}°C. Risk of off-flavors and stuck fermentation',
+        'type': 'warning',
         'icon': 'ac_unit',
-        'title': 'Temperature Low',
-        'message': 'Temperature at ${temp.toStringAsFixed(1)}°C may slow fermentation.',
-        'priority': 'medium',
-        'action': 'Consider gentle warming to optimal range (18-22°C)',
+        'action': 'Cool vessel immediately to avoid yeast stress',
+        'priority': 1,
+      });
+    } else {
+      recommendations.add({
+        'title': 'Temperature Optimal',
+        'message': 'Perfect range for ${specs['name']} (${specs['temp_min']}-${specs['temp_max']}°C)',
+        'type': 'success',
+        'icon': 'check_circle',
+        'action': 'Maintain current temperature',
+        'priority': 3,
       });
     }
-
+    
     // pH recommendations
-    if (ph < 3.0) {
+    if (ph < specs['ph_min']) {
       recommendations.add({
+        'title': 'pH Too Low - Microbial Risk',
+        'message': 'Current pH: ${ph.toStringAsFixed(2)}. ${specs['name']} target: ${specs['ph_min']}-${specs['ph_max']}',
         'type': 'warning',
         'icon': 'science',
-        'title': 'pH Too Low',
-        'message': 'pH at ${ph.toStringAsFixed(2)} increases risk of microbial spoilage and harsh flavors.',
-        'priority': 'high',
-        'action': 'Consider malolactic fermentation or potassium bicarbonate addition',
+        'action': 'Consider calcium carbonate addition to raise pH',
+        'priority': 1,
       });
-    } else if (ph > 4.0) {
+    } else if (ph > specs['ph_max']) {
       recommendations.add({
-        'type': 'warning',
-        'icon': 'science',
         'title': 'pH Too High',
-        'message': 'pH at ${ph.toStringAsFixed(2)} may allow harmful bacteria growth.',
-        'priority': 'high',
-        'action': 'Add tartaric acid or conduct acidification',
+        'message': 'Current pH: ${ph.toStringAsFixed(2)}. Risk of bacterial growth',
+        'type': 'warning',
+        'icon': 'science',
+        'action': 'Add tartaric acid or conduct malolactic fermentation',
+        'priority': 2,
       });
-    } else if (ph >= 3.2 && ph <= 3.6) {
+    } else {
       recommendations.add({
+        'title': 'pH Perfect for ${specs['name']}',
+        'message': 'pH ${ph.toStringAsFixed(2)} is ideal for flavor development',
         'type': 'success',
         'icon': 'verified',
-        'title': 'Optimal pH',
-        'message': 'pH at ${ph.toStringAsFixed(2)} is ideal for fermentation and stability.',
-        'priority': 'info',
-        'action': 'No action needed. Continue monitoring.',
+        'action': 'Continue monitoring',
+        'priority': 3,
       });
     }
-
+    
     // Dissolved Oxygen recommendations
-    if (dissolvedOxygen > 6.0) {
+    if (dissolvedOxygen > specs['do_max']) {
       recommendations.add({
+        'title': 'High Oxygen - Oxidation Risk',
+        'message': 'Current: ${dissolvedOxygen.toStringAsFixed(1)} mg/L. ${specs['name']} max: ${specs['do_max']} mg/L',
         'type': 'warning',
         'icon': 'opacity',
-        'title': 'High Dissolved Oxygen',
-        'message': 'DO at ${dissolvedOxygen.toStringAsFixed(2)} mg/L may cause oxidation.',
-        'priority': 'medium',
-        'action': 'Ensure airlocks are sealed. Consider SO₂ addition.',
+        'action': 'Check airlock seal and minimize headspace',
+        'priority': 1,
       });
     } else if (dissolvedOxygen < 2.0) {
       recommendations.add({
+        'title': 'Low Oxygen - Good Progress',
+        'message': 'Fermentation active. Approaching completion phase',
         'type': 'success',
-        'icon': 'check_circle',
-        'title': 'Good Oxygen Control',
-        'message': 'DO at ${dissolvedOxygen.toStringAsFixed(2)} mg/L minimizes oxidation risk.',
-        'priority': 'info',
-        'action': 'Continue current management practices.',
+        'icon': 'trending_up',
+        'action': 'Prepare for racking in ${prediction['daysRemaining'] ?? '5-7'} days',
+        'priority': 3,
       });
-    }
-
-    // If everything optimal
-    if (recommendations.isEmpty) {
+    } else {
       recommendations.add({
-        'type': 'success',
-        'icon': 'verified',
-        'title': 'Optimal Conditions',
-        'message': 'All parameters within ideal ranges for fermentation',
-        'priority': 'info',
-        'action': 'No action needed. Continue monitoring.',
+        'title': 'Oxygen Level Normal',
+        'message': 'Active fermentation with healthy yeast activity',
+        'type': 'info',
+        'icon': 'check_circle',
+        'action': 'Monitor daily',
+        'priority': 3,
       });
     }
-
+    
+    // Add predictive recommendations
+    final issues = FermentationPredictor.predictIssues(readings);
+    if (issues['hasIssues']) {
+      for (var prediction in issues['predictions']) {
+        recommendations.add({
+          'title': '⚠️ Predicted: ${prediction['metric']} Issue',
+          'message': prediction['message'],
+          'type': prediction['type'],
+          'icon': 'warning',
+          'action': prediction['recommendation'],
+          'priority': prediction['severity'] == 'high' ? 1 : 2,
+        });
+      }
+    }
+    
+    // Sort by priority
+    recommendations.sort((a, b) => a['priority'].compareTo(b['priority']));
+    
     return recommendations;
   }
+  
+  static String _detectFermentationType(List<Map<String, dynamic>> readings) {
+    // Analyze temperature and pH patterns to determine wine type
+    final tempValues = readings.map((r) => (r['temperature'] ?? 0).toDouble()).toList();
+    final phValues = readings.map((r) => (r['ph'] ?? 0).toDouble()).toList();
+    final avgTemp = tempValues.reduce((a, b) => a + b) / tempValues.length;
+    final avgPH = phValues.reduce((a, b) => a + b) / phValues.length;
+    
+    if (avgTemp >= 15 && avgTemp <= 20 && avgPH >= 3.0 && avgPH < 3.5) {
+      return 'white_wine';
+    } else if (avgTemp >= 20 && avgTemp <= 28 && avgPH >= 3.3 && avgPH <= 4.0) {
+      return 'red_wine';
+    } else if (avgTemp >= 25 && avgPH >= 4.5) {
+      return 'spirits';
+    } else {
+      // Default to red wine specs
+      return 'red_wine';
+    }
+  }
+  
+  static Map<String, dynamic> _getWineSpecs(String type) {
+    switch (type) {
+      case 'white_wine':
+        return {
+          'name': 'White Wine',
+          'temp_min': 15.0,
+          'temp_max': 20.0,
+          'ph_min': 3.0,
+          'ph_max': 3.4,
+          'do_max': 4.0,
+          'description': 'Cool fermentation preserves delicate aromatics',
+        };
+      
+      case 'red_wine':
+        return {
+          'name': 'Red Wine',
+          'temp_min': 20.0,
+          'temp_max': 28.0,
+          'ph_min': 3.3,
+          'ph_max': 4.0,
+          'do_max': 6.0,
+          'description': 'Warmer temps extract color and tannins',
+        };
+      
+      case 'spirits':
+        return {
+          'name': 'Spirits',
+          'temp_min': 25.0,
+          'temp_max': 35.0,
+          'ph_min': 4.0,
+          'ph_max': 5.5,
+          'do_max': 8.0,
+          'description': 'High-temperature fermentation for alcohol production',
+        };
+      
+      default:
+        return {
+          'name': 'Red Wine',
+          'temp_min': 20.0,
+          'temp_max': 28.0,
+          'ph_min': 3.3,
+          'ph_max': 4.0,
+          'do_max': 6.0,
+          'description': 'Standard fermentation parameters',
+        };
+    }
+  }
 }
-
