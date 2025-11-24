@@ -15,68 +15,65 @@ class AIInsightsPage extends StatelessWidget {
     required this.recommendations,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    // Get predictive issues
-    final predictiveIssues = FermentationPredictor.predictIssues(readings);
-    
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: const Color(0xFF667EEA),
-        title: const Text(
-          'AI Insights & Predictions',
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.3,
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+@override
+Widget build(BuildContext context) {
+  // Get predictive issues
+  final predictiveIssues = FermentationPredictor.predictIssues(readings);
+  
+  return Scaffold(
+    backgroundColor: const Color(0xFFF8F9FA),
+    appBar: AppBar(
+      elevation: 0,
+      backgroundColor: const Color(0xFF667EEA),
+      title: const Text(
+        'AI Insights & Predictions',
+        style: TextStyle(
+          fontFamily: 'Inter',
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.3,
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Fermentation Type Detection
-            _buildFermentationTypeCard(),
-            
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () => Navigator.pop(context),
+      ),
+    ),
+    body: SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Removed: Fermentation Type Detection Card
+          
+          // Prediction Card
+          _buildPredictionCard(),
+          
+          const SizedBox(height: 20),
+          
+          // Predictive Issues
+          if (predictiveIssues['hasIssues']) ...[
+            _buildPredictiveIssuesCard(predictiveIssues),
             const SizedBox(height: 20),
-            
-            // Prediction Card
-            _buildPredictionCard(),
-            
-            const SizedBox(height: 20),
-            
-            // Predictive Issues
-            if (predictiveIssues['hasIssues']) ...[
-              _buildPredictiveIssuesCard(predictiveIssues),
-              const SizedBox(height: 20),
-            ],
-            
-            // Anomalies
-            if (anomalies.isNotEmpty) ...[
-              _buildAnomaliesCard(),
-              const SizedBox(height: 20),
-            ],
-            
-            // Recommendations
-            _buildRecommendationsCard(),
-            
-            const SizedBox(height: 20),
-            
-            // Model Info
-            _buildModelInfoCard(),
           ],
-        ),
+          
+          // Anomalies
+          if (anomalies.isNotEmpty) ...[
+            _buildAnomaliesCard(),
+            const SizedBox(height: 20),
+          ],
+          
+          // Recommendations
+          _buildRecommendationsCard(),
+          
+          const SizedBox(height: 20),
+          
+          // Model Info
+          _buildModelInfoCard(),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
   
   Widget _buildFermentationTypeCard() {
     // Detect fermentation type
