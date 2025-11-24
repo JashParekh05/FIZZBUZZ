@@ -57,7 +57,17 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> fetchData() async {
     try {
-      final response = await http.get(Uri.parse(dataUrl));
+      // CACHE-BUSTING: Add timestamp to URL to prevent browser caching
+      final url = '$dataUrl?t=${DateTime.now().millisecondsSinceEpoch}';
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      );
       
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
