@@ -148,9 +148,10 @@ class SmartRecommendations {
     List<Map<String, dynamic>> recommendations = [];
 
     final temp = (latest['temperature'] ?? 0).toDouble();
-    final humidity = (latest['humidity'] ?? 0).toDouble();
+    final dissolvedOxygen = (latest['dissolved_oxygen'] ?? 0).toDouble();
+    final ph = (latest['ph'] ?? 0).toDouble();
 
-    // Temperature analysis
+    // Temperature recommendations
     if (temp > 25) {
       recommendations.add({
         'type': 'warning',
@@ -171,50 +172,54 @@ class SmartRecommendations {
       });
     }
 
-    // CO₂ trend analysis
-    if (readings.length >= 10) {
-      final recentCO2 = readings.take(10).map((r) => (r['co2'] ?? 0).toDouble()).toList();
-      final avgRecentCO2 = recentCO2.reduce((a, b) => a + b) / recentCO2.length;
-      
-      if (avgRecentCO2 > 2500) {
-        recommendations.add({
-          'type': 'success',
-          'icon': 'trending_up',
-          'title': 'Peak Fermentation',
-          'message': 'CO₂ levels indicate vigorous yeast activity (avg ${avgRecentCO2.toStringAsFixed(0)} ppm)',
-          'priority': 'info',
-          'action': 'Fermentation progressing well. Continue current protocol.',
-        });
-      } else if (avgRecentCO2 < 800 && prediction['status'] == 'active') {
-        recommendations.add({
-          'type': 'success',
-          'icon': 'check_circle',
-          'title': 'Nearing Completion',
-          'message': 'CO₂ production declining. ${prediction['message']}',
-          'priority': 'info',
-          'action': 'Prepare for secondary fermentation or racking',
-        });
-      }
-    }
-
-    // Humidity check
-    if (humidity > 75) {
+    // pH recommendations
+    if (ph < 3.0) {
       recommendations.add({
         'type': 'warning',
-        'icon': 'water_drop',
-        'title': 'High Humidity Alert',
-        'message': 'Humidity at ${humidity.toStringAsFixed(1)}% increases mold risk',
-        'priority': 'medium',
-        'action': 'Improve ventilation or use dehumidifier',
+        'icon': 'science',
+        'title': 'pH Too Low',
+        'message': 'pH at ${ph.toStringAsFixed(2)} increases risk of microbial spoilage and harsh flavors.',
+        'priority': 'high',
+        'action': 'Consider malolactic fermentation or potassium bicarbonate addition',
       });
-    } else if (humidity < 40) {
+    } else if (ph > 4.0) {
       recommendations.add({
-        'type': 'info',
-        'icon': 'water_drop',
-        'title': 'Low Humidity',
-        'message': 'Humidity at ${humidity.toStringAsFixed(1)}% may increase evaporation',
-        'priority': 'low',
-        'action': 'Monitor liquid levels more frequently',
+        'type': 'warning',
+        'icon': 'science',
+        'title': 'pH Too High',
+        'message': 'pH at ${ph.toStringAsFixed(2)} may allow harmful bacteria growth.',
+        'priority': 'high',
+        'action': 'Add tartaric acid or conduct acidification',
+      });
+    } else if (ph >= 3.2 && ph <= 3.6) {
+      recommendations.add({
+        'type': 'success',
+        'icon': 'verified',
+        'title': 'Optimal pH',
+        'message': 'pH at ${ph.toStringAsFixed(2)} is ideal for fermentation and stability.',
+        'priority': 'info',
+        'action': 'No action needed. Continue monitoring.',
+      });
+    }
+
+    // Dissolved Oxygen recommendations
+    if (dissolvedOxygen > 6.0) {
+      recommendations.add({
+        'type': 'warning',
+        'icon': 'opacity',
+        'title': 'High Dissolved Oxygen',
+        'message': 'DO at ${dissolvedOxygen.toStringAsFixed(2)} mg/L may cause oxidation.',
+        'priority': 'medium',
+        'action': 'Ensure airlocks are sealed. Consider SO₂ addition.',
+      });
+    } else if (dissolvedOxygen < 2.0) {
+      recommendations.add({
+        'type': 'success',
+        'icon': 'check_circle',
+        'title': 'Good Oxygen Control',
+        'message': 'DO at ${dissolvedOxygen.toStringAsFixed(2)} mg/L minimizes oxidation risk.',
+        'priority': 'info',
+        'action': 'Continue current management practices.',
       });
     }
 

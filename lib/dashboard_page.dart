@@ -23,9 +23,9 @@ class _DashboardPageState extends State<DashboardPage> {
 
   // Thresholds
   double tempThreshold = 28.0;
-  double humidityThreshold = 70.0;
-  double co2Threshold = 2000.0;
-  double dissolvedOxygenThreshold = 8.0;
+  double dissolvedOxygenThreshold = 8.0;  // mg/L
+  double phThreshold = 4.5;  // pH (upper bound - wine typically 3.0-4.0)
+  double phMaxThreshold = 3.8;  // pH (lower bound - minimum acceptable)
 
   final String dataUrl = 'https://fizzbuzz-fermentation-data.s3.us-east-2.amazonaws.com/data/latest.json';
 
@@ -47,9 +47,9 @@ class _DashboardPageState extends State<DashboardPage> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       tempThreshold = prefs.getDouble('tempThreshold') ?? 28.0;
-      humidityThreshold = prefs.getDouble('humidityThreshold') ?? 70.0;
-      co2Threshold = prefs.getDouble('co2Threshold') ?? 2000.0;
       dissolvedOxygenThreshold = prefs.getDouble('dissolvedOxygenThreshold') ?? 8.0;
+      phThreshold = prefs.getDouble('phThreshold') ?? 4.5;
+      phMaxThreshold = prefs.getDouble('phMaxThreshold') ?? 3.8;
     });
   }
 
@@ -82,23 +82,30 @@ class _DashboardPageState extends State<DashboardPage> {
     if (readings.isEmpty) return false;
     final latest = readings.first;
     return (latest['temperature'] ?? 0) > tempThreshold ||
-        (latest['humidity'] ?? 0) > humidityThreshold ||
-        (latest['co2'] ?? 0) > co2Threshold;
+        (latest['dissolved_oxygen'] ?? 0) > dissolvedOxygenThreshold ||
+        (latest['ph'] ?? 0) < phMaxThreshold ||  // pH too low
+        (latest['ph'] ?? 0) > phThreshold;  // pH too high
   }
 
   List<String> _getWarnings() {
     if (readings.isEmpty) return [];
     final latest = readings.first;
     List<String> warnings = [];
+    
     if ((latest['temperature'] ?? 0) > tempThreshold) {
       warnings.add('⚠️ Temperature exceeds $tempThreshold°C');
     }
-    if ((latest['humidity'] ?? 0) > humidityThreshold) {
-      warnings.add('⚠️ Humidity exceeds $humidityThreshold%');
+    if ((latest['dissolved_oxygen'] ?? 0) > dissolvedOxygenThreshold) {
+      warnings.add('⚠️ Dissolved Oxygen exceeds ${dissolvedOxygenThreshold.toStringAsFixed(1)} mg/L');
     }
-    if ((latest['co2'] ?? 0) > co2Threshold) {
-      warnings.add('⚠️ CO₂ exceeds $co2Threshold ppm');
+    
+    final ph = (latest['ph'] ?? 0).toDouble();
+    if (ph < phMaxThreshold) {
+      warnings.add('⚠️ pH too low (${ph.toStringAsFixed(2)}) - Risk of microbial spoilage');
+    } else if (ph > phThreshold) {
+      warnings.add('⚠️ pH too high (${ph.toStringAsFixed(2)}) - Target: 3.0-4.0');
     }
+    
     return warnings;
   }
 
@@ -126,8 +133,8 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget build(BuildContext context) {
     final latestReading = readings.isNotEmpty ? readings.first : null;
     final temp = latestReading?['temperature'] ?? 0.0;
-    final humidity = latestReading?['humidity'] ?? 0.0;
-    final co2 = latestReading?['co2'] ?? 0;
+    final dissolvedOxygen = latestReading?['dissolved_oxygen'] ?? 0.0;
+    final ph = latestReading?['ph'] ?? 0.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
@@ -210,9 +217,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 MaterialPageRoute(
                   builder: (context) => ThresholdSettingsPage(
                     tempThreshold: tempThreshold,
-                    humidityThreshold: humidityThreshold,
-                    co2Threshold: co2Threshold,
                     dissolvedOxygenThreshold: dissolvedOxygenThreshold,
+                    phThreshold: phThreshold,
                   ),
                 ),
               );
@@ -393,27 +399,27 @@ class _DashboardPageState extends State<DashboardPage> {
                                     SizedBox(
                                       width: cardWidth,
                                       child: _buildMetricCardWithChart(
-                                        icon: Icons.water_drop_outlined,
-                                        label: 'Humidity',
-                                        value: '${humidity.toStringAsFixed(1)}%',
+                                        icon: Icons.opacity_outlined,
+                                        label: 'Dissolved O₂',
+                                        value: '${dissolvedOxygen.toStringAsFixed(2)} mg/L',
                                         color: const Color(0xFF4ECDC4),
-                                        threshold: humidityThreshold,
-                                        currentValue: humidity,
-                                        chartData: getChartData('humidity'),
-                                        metricKey: 'humidity',
+                                        threshold: dissolvedOxygenThreshold,
+                                        currentValue: dissolvedOxygen,
+                                        chartData: getChartData('dissolved_oxygen'),
+                                        metricKey: 'dissolved_oxygen',
                                       ),
                                     ),
                                     SizedBox(
                                       width: cardWidth,
                                       child: _buildMetricCardWithChart(
-                                        icon: Icons.air_outlined,
-                                        label: 'CO₂ Level',
-                                        value: '$co2 ppm',
+                                        icon: Icons.science_outlined,
+                                        label: 'pH Level',
+                                        value: ph.toStringAsFixed(2),
                                         color: const Color(0xFF95E1D3),
-                                        threshold: co2Threshold,
-                                        currentValue: co2.toDouble(),
-                                        chartData: getChartData('co2'),
-                                        metricKey: 'co2',
+                                        threshold: phThreshold,
+                                        currentValue: ph,
+                                        chartData: getChartData('ph'),
+                                        metricKey: 'ph',
                                       ),
                                     ),
                                     SizedBox(
@@ -664,9 +670,11 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Widget _buildHistoryCard(Map<String, dynamic> reading) {
     final temp = reading['temperature'] ?? 0;
+    final ph = (reading['ph'] ?? 0).toDouble();
     final hasAlert = temp > tempThreshold ||
-        (reading['humidity'] ?? 0) > humidityThreshold ||
-        (reading['co2'] ?? 0) > co2Threshold;
+        (reading['dissolved_oxygen'] ?? 0) > dissolvedOxygenThreshold ||
+        ph < phMaxThreshold ||
+        ph > phThreshold;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -704,7 +712,7 @@ class _DashboardPageState extends State<DashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${reading['temperature']}°C  •  ${reading['humidity']}%  •  ${reading['co2']} ppm',
+                  '${reading['temperature']}°C  •  ${(reading['dissolved_oxygen'] ?? 0).toStringAsFixed(1)} mg/L  •  pH ${(reading['ph'] ?? 0).toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1089,6 +1097,10 @@ class _DashboardPageState extends State<DashboardPage> {
         return Icons.water_drop_outlined;
       case 'verified':
         return Icons.verified_outlined;
+      case 'science':
+        return Icons.science_outlined;
+      case 'opacity':
+        return Icons.opacity_outlined;
       default:
         return Icons.info_outline;
     }
@@ -1109,16 +1121,14 @@ class _DashboardPageState extends State<DashboardPage> {
 // Threshold Settings Page
 class ThresholdSettingsPage extends StatefulWidget {
   final double tempThreshold;
-  final double humidityThreshold;
-  final double co2Threshold;
   final double dissolvedOxygenThreshold;
+  final double phThreshold;
 
   const ThresholdSettingsPage({
     super.key,
     required this.tempThreshold,
-    required this.humidityThreshold,
-    required this.co2Threshold,
     required this.dissolvedOxygenThreshold,
+    required this.phThreshold,
   });
 
   @override
@@ -1127,34 +1137,30 @@ class ThresholdSettingsPage extends StatefulWidget {
 
 class _ThresholdSettingsPageState extends State<ThresholdSettingsPage> {
   late TextEditingController tempController;
-  late TextEditingController humidityController;
-  late TextEditingController co2Controller;
   late TextEditingController dissolvedOxygenController;
+  late TextEditingController phController;
 
   @override
   void initState() {
     super.initState();
     tempController = TextEditingController(text: widget.tempThreshold.toString());
-    humidityController = TextEditingController(text: widget.humidityThreshold.toString());
-    co2Controller = TextEditingController(text: widget.co2Threshold.toString());
     dissolvedOxygenController = TextEditingController(text: widget.dissolvedOxygenThreshold.toString());
+    phController = TextEditingController(text: widget.phThreshold.toString());
   }
 
   @override
   void dispose() {
     tempController.dispose();
-    humidityController.dispose();
-    co2Controller.dispose();
     dissolvedOxygenController.dispose();
+    phController.dispose();
     super.dispose();
   }
 
   Future<void> _saveThresholds() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('tempThreshold', double.parse(tempController.text));
-    await prefs.setDouble('humidityThreshold', double.parse(humidityController.text));
-    await prefs.setDouble('co2Threshold', double.parse(co2Controller.text));
     await prefs.setDouble('dissolvedOxygenThreshold', double.parse(dissolvedOxygenController.text));
+    await prefs.setDouble('phThreshold', double.parse(phController.text));
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1223,29 +1229,19 @@ class _ThresholdSettingsPageState extends State<ThresholdSettingsPage> {
             ),
             const SizedBox(height: 20),
             _buildThresholdInput(
-              icon: Icons.water_drop_outlined,
-              label: 'Humidity',
-              unit: '%',
-              controller: humidityController,
-              color: const Color(0xFF4ECDC4),
-            ),
-            Container(
-              height: 20,
-            ),
-            _buildThresholdInput(
-              icon: Icons.air_outlined,
-              label: 'Carbon Dioxide (CO₂)',
-              unit: 'ppm',
-              controller: co2Controller,
-              color: const Color(0xFF95E1D3),
-            ),
-            const SizedBox(height: 20),
-            _buildThresholdInput(
               icon: Icons.opacity_outlined,
               label: 'Dissolved Oxygen',
               unit: 'mg/L',
               controller: dissolvedOxygenController,
-              color: const Color(0xFFA8DADC),
+              color: const Color(0xFF4ECDC4),
+            ),
+            const SizedBox(height: 20),
+            _buildThresholdInput(
+              icon: Icons.science_outlined,
+              label: 'pH Level (Max)',
+              unit: 'pH',
+              controller: phController,
+              color: const Color(0xFF95E1D3),
             ),
             const SizedBox(height: 40),
             SizedBox(
