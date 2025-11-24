@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'ml_insights.dart';
+import 'ai_insights_page.dart';
 
 // Main Dashboard Page
 class DashboardPage extends StatefulWidget {
@@ -89,13 +91,13 @@ class _DashboardPageState extends State<DashboardPage> {
     final latest = readings.first;
     List<String> warnings = [];
     if ((latest['temperature'] ?? 0) > tempThreshold) {
-      warnings.add('⚠️ Temperature exceeds ${tempThreshold}°C');
+      warnings.add('⚠️ Temperature exceeds $tempThreshold°C');
     }
     if ((latest['humidity'] ?? 0) > humidityThreshold) {
-      warnings.add('⚠️ Humidity exceeds ${humidityThreshold}%');
+      warnings.add('⚠️ Humidity exceeds $humidityThreshold%');
     }
     if ((latest['co2'] ?? 0) > co2Threshold) {
-      warnings.add('⚠️ CO₂ exceeds ${co2Threshold} ppm');
+      warnings.add('⚠️ CO₂ exceeds $co2Threshold ppm');
     }
     return warnings;
   }
@@ -348,6 +350,9 @@ class _DashboardPageState extends State<DashboardPage> {
                             ),
                             const SizedBox(height: 28),
                             
+                            // AI Insights Card
+                            _buildAIInsightsCard(),
+                            
                             // Metrics Grid with Charts
                             const Text(
                               'Live Metrics',
@@ -360,48 +365,69 @@ class _DashboardPageState extends State<DashboardPage> {
                               ),
                             ),
                             const SizedBox(height: 16),
-                            GridView.count(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              crossAxisCount: 2,
-                              mainAxisSpacing: 16,
-                              crossAxisSpacing: 16,
-                              childAspectRatio: 0.85,
-                              children: [
-                                _buildMetricCardWithChart(
-                                  icon: Icons.thermostat_outlined,
-                                  label: 'Temperature',
-                                  value: '${temp.toStringAsFixed(1)}°C',
-                                  color: const Color(0xFFFF6B6B),
-                                  threshold: tempThreshold,
-                                  currentValue: temp,
-                                  chartData: getChartData('temperature'),
-                                ),
-                                _buildMetricCardWithChart(
-                                  icon: Icons.water_drop_outlined,
-                                  label: 'Humidity',
-                                  value: '${humidity.toStringAsFixed(1)}%',
-                                  color: const Color(0xFF4ECDC4),
-                                  threshold: humidityThreshold,
-                                  currentValue: humidity,
-                                  chartData: getChartData('humidity'),
-                                ),
-                                _buildMetricCardWithChart(
-                                  icon: Icons.air_outlined,
-                                  label: 'CO₂ Level',
-                                  value: '$co2 ppm',
-                                  color: const Color(0xFF95E1D3),
-                                  threshold: co2Threshold,
-                                  currentValue: co2.toDouble(),
-                                  chartData: getChartData('co2'),
-                                ),
-                                _buildMetricCard(
-                                  icon: Icons.access_time_outlined,
-                                  label: 'Last Update',
-                                  value: _formatTime(latestReading?['timestamp'] ?? ''),
-                                  color: const Color(0xFFA8DADC),
-                                ),
-                              ],
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                // Calculate how many cards can fit per row based on screen width
+                                const double minCardWidth = 160;
+                                const double spacing = 10;
+                                final int crossAxisCount = ((constraints.maxWidth + spacing) / (minCardWidth + spacing)).floor().clamp(1, 4);
+                                final double cardWidth = ((constraints.maxWidth - (spacing * (crossAxisCount - 1))) / crossAxisCount).clamp(minCardWidth, double.infinity);
+                                
+                                return Wrap(
+                                  spacing: spacing,
+                                  runSpacing: spacing,
+                                  children: [
+                                    SizedBox(
+                                      width: cardWidth,
+                                      child: _buildMetricCardWithChart(
+                                        icon: Icons.thermostat_outlined,
+                                        label: 'Temperature',
+                                        value: '${temp.toStringAsFixed(1)}°C',
+                                        color: const Color(0xFFFF6B6B),
+                                        threshold: tempThreshold,
+                                        currentValue: temp,
+                                        chartData: getChartData('temperature'),
+                                        metricKey: 'temperature',
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: cardWidth,
+                                      child: _buildMetricCardWithChart(
+                                        icon: Icons.water_drop_outlined,
+                                        label: 'Humidity',
+                                        value: '${humidity.toStringAsFixed(1)}%',
+                                        color: const Color(0xFF4ECDC4),
+                                        threshold: humidityThreshold,
+                                        currentValue: humidity,
+                                        chartData: getChartData('humidity'),
+                                        metricKey: 'humidity',
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: cardWidth,
+                                      child: _buildMetricCardWithChart(
+                                        icon: Icons.air_outlined,
+                                        label: 'CO₂ Level',
+                                        value: '$co2 ppm',
+                                        color: const Color(0xFF95E1D3),
+                                        threshold: co2Threshold,
+                                        currentValue: co2.toDouble(),
+                                        chartData: getChartData('co2'),
+                                        metricKey: 'co2',
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: cardWidth,
+                                      child: _buildMetricCard(
+                                        icon: Icons.access_time_outlined,
+                                        label: 'Last Update',
+                                        value: _formatTime(latestReading?['timestamp'] ?? ''),
+                                        color: const Color(0xFFA8DADC),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                             const SizedBox(height: 32),
                             
@@ -438,147 +464,138 @@ class _DashboardPageState extends State<DashboardPage> {
     required double threshold,
     required double currentValue,
     required List<FlSpot> chartData,
+    required String metricKey,
   }) {
     final bool exceeds = currentValue > threshold;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: exceeds ? Border.all(color: const Color(0xFFE63946), width: 2) : null,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => MetricDetailPage(
+              icon: icon,
+              label: label,
+              value: value,
+              color: color,
+              threshold: threshold,
+              currentValue: currentValue,
+              chartData: chartData,
+              metricKey: metricKey,
+              readings: readings,
+            ),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: color, size: 22),
-              ),
-              if (exceeds)
+        );
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: exceeds ? Border.all(color: const Color(0xFFE63946), width: 1.5) : null,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE63946).withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
+                    color: color.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(4),
                   ),
-                  child: const Text(
-                    'ALERT',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFFE63946),
-                      fontFamily: 'Inter',
-                      letterSpacing: 0.5,
+                  child: Icon(icon, color: color, size: 14),
+                ),
+                if (exceeds)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE63946).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(4),
                     ),
+                    child: const Text(
+                      'ALERT',
+                      style: TextStyle(
+                        fontSize: 6,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFE63946),
+                        fontFamily: 'Inter',
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 8,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+                fontFamily: 'Inter',
+                letterSpacing: 0.2,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: exceeds ? const Color(0xFFE63946) : const Color(0xFF2D3561),
+                    fontFamily: 'Inter',
+                    letterSpacing: 0.3,
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-              fontFamily: 'Inter',
-              letterSpacing: 0.2,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: exceeds ? const Color(0xFFE63946) : const Color(0xFF2D3561),
-              fontFamily: 'Inter',
-              letterSpacing: 0.3,
-            ),
-          ),
-          Text(
-            'Max: ${threshold.toStringAsFixed(0)}',
-            style: TextStyle(
-              fontSize: 10,
-              color: Colors.grey[500],
-              fontFamily: 'Inter',
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: chartData.length > 1
-                ? LineChart(
-                    LineChartData(
-                      gridData: FlGridData(
-                        show: true,
-                        drawVerticalLine: false,
-                        horizontalInterval: 1,
-                        getDrawingHorizontalLine: (value) {
-                          return FlLine(
-                            color: Colors.grey[200]!,
-                            strokeWidth: 1,
-                          );
-                        },
-                      ),
-                      titlesData: const FlTitlesData(show: false),
-                      borderData: FlBorderData(
-                        show: true,
-                        border: Border(
-                          bottom: BorderSide(color: Colors.grey[300]!, width: 1),
-                          left: BorderSide(color: Colors.grey[300]!, width: 1),
-                        ),
-                      ),
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: chartData,
-                          isCurved: true,
-                          color: color,
-                          barWidth: 2.5,
-                          dotData: FlDotData(
-                            show: true,
-                            getDotPainter: (spot, percent, barData, index) {
-                              return FlDotCirclePainter(
-                                radius: 2,
-                                color: color,
-                                strokeWidth: 0,
-                              );
-                            },
-                          ),
-                          belowBarData: BarAreaData(
-                            show: true,
-                            color: color.withOpacity(0.15),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : Center(
-                    child: Text(
-                      'Collecting data...',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey[400],
-                        fontFamily: 'Inter',
-                      ),
-                    ),
+                const SizedBox(width: 4),
+                Text(
+                  'Max: ${threshold.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontSize: 7,
+                    color: Colors.grey[500],
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.w500,
                   ),
-          ),
-        ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Icon(
+                  Icons.trending_up,
+                  size: 10,
+                  color: Colors.grey[400],
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  'Tap to view chart',
+                  style: TextStyle(
+                    fontSize: 7,
+                    color: Colors.grey[400],
+                    fontFamily: 'Inter',
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -590,15 +607,15 @@ class _DashboardPageState extends State<DashboardPage> {
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(10),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -607,12 +624,12 @@ class _DashboardPageState extends State<DashboardPage> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               color: color.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(5),
             ),
-            child: Icon(icon, color: color, size: 24),
+            child: Icon(icon, color: color, size: 14),
           ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -620,18 +637,18 @@ class _DashboardPageState extends State<DashboardPage> {
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 8,
                   color: Colors.grey[600],
                   fontWeight: FontWeight.w500,
                   fontFamily: 'Inter',
                   letterSpacing: 0.2,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 value,
                 style: const TextStyle(
-                  fontSize: 20,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF2D3561),
                   fontFamily: 'Inter',
@@ -735,6 +752,356 @@ class _DashboardPageState extends State<DashboardPage> {
       return '${diff.inDays}d ago';
     } catch (e) {
       return 'Just now';
+    }
+  }
+
+  Widget _buildAIInsightsCard() {
+    final prediction = FermentationPredictor.predictCompletion(readings);
+    final anomalies = AnomalyDetector.detectAnomalies(readings);
+    final recommendations = SmartRecommendations.getRecommendations(
+      readings.isNotEmpty ? readings.first : null,
+      readings,
+      prediction,
+    );
+    final hasAnomalies = anomalies.isNotEmpty;
+    final daysRemaining = prediction['daysRemaining'];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF667EEA),
+            Color(0xFF764BA2),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF667EEA).withOpacity(0.4),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.psychology_outlined,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AI Analysis',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                    Text(
+                      'Machine Learning Insights',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.white70,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.white, size: 12),
+                    SizedBox(width: 4),
+                    Text(
+                      'LIVE',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        fontFamily: 'Inter',
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          // Prediction
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.schedule,
+                    color: Color(0xFF667EEA),
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Completion Prediction',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        daysRemaining != null 
+                          ? 'Estimated: $daysRemaining ${daysRemaining == 1 ? "day" : "days"} remaining'
+                          : prediction['message'] ?? 'Analyzing...',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.white,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _getConfidenceColor(prediction['confidence']),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    (prediction['confidence']?.toString().toUpperCase() ?? 'LOW'),
+                    style: const TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      fontFamily: 'Inter',
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 8),
+          
+          // Top Recommendation
+          if (recommendations.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      _getRecommendationIcon(recommendations.first['icon']),
+                      color: _getRecommendationColor(recommendations.first['type']),
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          recommendations.first['title'],
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            fontFamily: 'Inter',
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          recommendations.first['message'],
+                          style: const TextStyle(
+                            fontSize: 9,
+                            color: Colors.white,
+                            fontFamily: 'Inter',
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          
+          // Anomaly Alert
+          if (hasAnomalies) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange, width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 16),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '${anomalies.length} anomal${anomalies.length == 1 ? "y" : "ies"} detected',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          
+          const SizedBox(height: 12),
+          
+          // View Details Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AIInsightsPage(
+                      readings: readings,
+                      prediction: prediction,
+                      anomalies: anomalies,
+                      recommendations: recommendations,
+                    ),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF667EEA),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                elevation: 0,
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'View Detailed Analysis',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Inter',
+                      fontSize: 12,
+                    ),
+                  ),
+                  SizedBox(width: 6),
+                  Icon(Icons.arrow_forward, size: 16),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getConfidenceColor(String? confidence) {
+    switch (confidence) {
+      case 'high':
+        return Colors.green.withOpacity(0.8);
+      case 'medium':
+        return Colors.orange.withOpacity(0.8);
+      default:
+        return Colors.red.withOpacity(0.8);
+    }
+  }
+
+  IconData _getRecommendationIcon(String? icon) {
+    switch (icon) {
+      case 'thermostat':
+        return Icons.thermostat_outlined;
+      case 'ac_unit':
+        return Icons.ac_unit;
+      case 'trending_up':
+        return Icons.trending_up;
+      case 'check_circle':
+        return Icons.check_circle_outlined;
+      case 'water_drop':
+        return Icons.water_drop_outlined;
+      case 'verified':
+        return Icons.verified_outlined;
+      default:
+        return Icons.info_outline;
+    }
+  }
+
+  Color _getRecommendationColor(String? type) {
+    switch (type) {
+      case 'warning':
+        return Colors.orange;
+      case 'success':
+        return Colors.green;
+      default:
+        return const Color(0xFF667EEA);
     }
   }
 }
@@ -862,7 +1229,9 @@ class _ThresholdSettingsPageState extends State<ThresholdSettingsPage> {
               controller: humidityController,
               color: const Color(0xFF4ECDC4),
             ),
-            const SizedBox(height: 20),
+            Container(
+              height: 20,
+            ),
             _buildThresholdInput(
               icon: Icons.air_outlined,
               label: 'Carbon Dioxide (CO₂)',
@@ -1000,5 +1369,376 @@ class _ThresholdSettingsPageState extends State<ThresholdSettingsPage> {
         ],
       ),
     );
+  }
+}
+
+// Metric Detail Page
+class MetricDetailPage extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  final double threshold;
+  final double currentValue;
+  final List<FlSpot> chartData;
+  final String metricKey;
+  final List<Map<String, dynamic>> readings;
+
+  const MetricDetailPage({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.threshold,
+    required this.currentValue,
+    required this.chartData,
+    required this.metricKey,
+    required this.readings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool exceeds = currentValue > threshold;
+    
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: color,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: Colors.white, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontWeight: FontWeight.w600,
+                  fontSize: 18,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
+              ),
+            ),
+          ],
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Current Value Card
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Current Value',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                      fontFamily: 'Inter',
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 48,
+                      fontWeight: FontWeight.w800,
+                      color: exceeds ? const Color(0xFFE63946) : const Color(0xFF2D3561),
+                      fontFamily: 'Inter',
+                    ),
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: exceeds 
+                        ? const Color(0xFFE63946).withOpacity(0.1)
+                        : Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      exceeds ? '⚠️ Exceeds Threshold' : '✓ Within Range',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: exceeds ? const Color(0xFFE63946) : Colors.green[700],
+                        fontFamily: 'Inter',
+                      ),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            
+            // Chart Card
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Trend Over Time',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF2D3561),
+                      fontFamily: 'Inter',
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    height: 250,
+                    child: chartData.length > 1
+                        ? LineChart(
+                            LineChartData(
+                              gridData: FlGridData(
+                                show: true,
+                                drawVerticalLine: false,
+                                horizontalInterval: 1,
+                                getDrawingHorizontalLine: (value) {
+                                  return FlLine(
+                                    color: Colors.grey[200]!,
+                                    strokeWidth: 1,
+                                  );
+                                },
+                              ),
+                              titlesData: FlTitlesData(
+                                show: true,
+                                rightTitles: const AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false),
+                                ),
+                                topTitles: const AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false),
+                                ),
+                                bottomTitles: AxisTitles(
+                                  sideTitles: SideTitles(
+                                    showTitles: true,
+                                    reservedSize: 22,
+                                    interval: 5,
+                                    getTitlesWidget: (value, meta) {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          '${value.toInt()}',
+                                          style: TextStyle(
+                                            color: Colors.grey[600],
+                                            fontSize: 10,
+                                            fontFamily: 'Inter',
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                leftTitles: AxisTitles(
+                                  sideTitles: SideTitles(
+                                    showTitles: true,
+                                    reservedSize: 40,
+                                    interval: _getInterval(chartData),
+                                    getTitlesWidget: (value, meta) {
+                                      return Text(
+                                        value.toStringAsFixed(0),
+                                        style: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 10,
+                                          fontFamily: 'Inter',
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                              borderData: FlBorderData(
+                                show: true,
+                                border: Border(
+                                  bottom: BorderSide(color: Colors.grey[300]!, width: 1),
+                                  left: BorderSide(color: Colors.grey[300]!, width: 1),
+                                ),
+                              ),
+                              lineBarsData: [
+                                LineChartBarData(
+                                  spots: chartData,
+                                  isCurved: true,
+                                  color: color,
+                                  barWidth: 3,
+                                  dotData: FlDotData(
+                                    show: true,
+                                    getDotPainter: (spot, percent, barData, index) {
+                                      return FlDotCirclePainter(
+                                        radius: 3,
+                                        color: color,
+                                        strokeWidth: 2,
+                                        strokeColor: Colors.white,
+                                      );
+                                    },
+                                  ),
+                                  belowBarData: BarAreaData(
+                                    show: true,
+                                    color: color.withOpacity(0.15),
+                                  ),
+                                ),
+                              ],
+                              lineTouchData: LineTouchData(
+                                enabled: true,
+                                touchTooltipData: LineTouchTooltipData(
+                                  getTooltipItems: (touchedSpots) {
+                                    return touchedSpots.map((spot) {
+                                      return LineTooltipItem(
+                                        spot.y.toStringAsFixed(1),
+                                        TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                          fontFamily: 'Inter',
+                                        ),
+                                      );
+                                    }).toList();
+                                  },
+                                ),
+                              ),
+                            ),
+                          )
+                        : Center(
+                            child: Text(
+                              'Collecting data...',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[400],
+                                fontFamily: 'Inter',
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            
+            // Threshold Info
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Threshold',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontFamily: 'Inter',
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${threshold.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF2D3561),
+                            fontFamily: 'Inter',
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: color, size: 32),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double _getInterval(List<FlSpot> data) {
+    if (data.isEmpty) return 1;
+    final values = data.map((spot) => spot.y).toList();
+    final min = values.reduce((a, b) => a < b ? a : b);
+    final max = values.reduce((a, b) => a > b ? a : b);
+    final range = max - min;
+    if (range < 5) return 1;
+    if (range < 10) return 2;
+    if (range < 50) return 10;
+    if (range < 100) return 20;
+    return 50;
   }
 }
